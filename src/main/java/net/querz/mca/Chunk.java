@@ -32,7 +32,7 @@ public class Chunk implements Iterable<Section> {
 	private int dataVersion;
 	private long lastUpdate;
 	private long inhabitedTime;
-	private int[] biomes;
+	private byte[] biomes;
 	private CompoundTag heightMaps;
 	private CompoundTag carvingMasks;
 	private Map<Integer, Section> sections = new TreeMap<>();
@@ -78,7 +78,7 @@ public class Chunk implements Iterable<Section> {
 		inhabitedTime = level.getLong("InhabitedTime");
 		lastUpdate = level.getLong("LastUpdate");
 		if ((loadFlags & BIOMES) != 0) {
-			biomes = level.getIntArray("Biomes");
+			biomes = level.getByteArray("Biomes");
 		}
 		if ((loadFlags & HEIGHTMAPS) != 0) {
 			heightMaps = level.getCompoundTag("Heightmaps");
@@ -230,21 +230,21 @@ public class Chunk implements Iterable<Section> {
 		checkRaw();
 		if (dataVersion < 2202) {
 			if (biomes == null || biomes.length != 256) {
-				biomes = new int[256];
-				Arrays.fill(biomes, -1);
+				biomes = new byte[256];
+				Arrays.fill(biomes, (byte) -1);
 			}
-			biomes[getBlockIndex(blockX, blockZ)] = biomeID;
+			biomes[getBlockIndex(blockX, blockZ)] = (byte) biomeID;
 		} else {
 			if (biomes == null || biomes.length != 1024) {
-				biomes = new int[1024];
-				Arrays.fill(biomes, -1);
+				biomes = new byte[1024];
+				Arrays.fill(biomes, (byte) -1);
 			}
 
 			int biomeX = (blockX & 0xF) >> 2;
 			int biomeZ = (blockZ & 0xF) >> 2;
 
 			for (int y = 0; y < 64; y++) {
-				biomes[getBiomeIndex(biomeX, y, biomeZ)] = biomeID;
+				biomes[getBiomeIndex(biomeX, y, biomeZ)] = (byte) biomeID;
 			}
 		}
 	}
@@ -261,20 +261,20 @@ public class Chunk implements Iterable<Section> {
 		checkRaw();
 		if (dataVersion < 2202) {
 			if (biomes == null || biomes.length != 256) {
-				biomes = new int[256];
-				Arrays.fill(biomes, -1);
+				biomes = new byte[256];
+				Arrays.fill(biomes, (byte) -1);
 			}
-			biomes[getBlockIndex(blockX, blockZ)] = biomeID;
+			biomes[getBlockIndex(blockX, blockZ)] = (byte) biomeID;
 		} else {
 			if (biomes == null || biomes.length != 1024) {
-				biomes = new int[1024];
-				Arrays.fill(biomes, -1);
+				biomes = new byte[1024];
+				Arrays.fill(biomes, (byte) -1);
 			}
 
 			int biomeX = (blockX & 0xF) >> 2;
 			int biomeZ = (blockZ & 0xF) >> 2;
 
-			biomes[getBiomeIndex(biomeX, blockY, biomeZ)] = biomeID;
+			biomes[getBiomeIndex(biomeX, blockY, biomeZ)] = (byte) biomeID;
 		}
 	}
 
@@ -419,7 +419,7 @@ public class Chunk implements Iterable<Section> {
 	/**
 	 * @return A matrix of biome IDs for all block columns in this chunk.
 	 */
-	public int[] getBiomes() {
+	public byte[] getBiomes() {
 		return biomes;
 	}
 
@@ -429,7 +429,7 @@ public class Chunk implements Iterable<Section> {
 	 * @throws IllegalArgumentException When the biome matrix does not have a length of <code>256</code>
 	 *                                  or is <code>null</code>
 	 */
-	public void setBiomes(int[] biomes) {
+	public void setBiomes(byte[] biomes) {
 		checkRaw();
 		if (biomes != null) {
 			if (dataVersion < 2202 && biomes.length != 256 || dataVersion >= 2202 && biomes.length != 1024) {
@@ -668,11 +668,11 @@ public class Chunk implements Iterable<Section> {
 		level.putLong("InhabitedTime", inhabitedTime);
 		if (dataVersion < 2202) {
 			if (biomes != null && biomes.length == 256) {
-				level.putIntArray("Biomes", biomes);
+				level.putByteArray("Biomes", biomes);
 			}
 		} else {
 			if (biomes != null && biomes.length == 1024) {
-				level.putIntArray("Biomes", biomes);
+				// level.putIntArray("Biomes", biomes);
 			}
 		}
 		if (heightMaps != null) {

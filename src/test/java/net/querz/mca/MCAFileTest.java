@@ -136,9 +136,9 @@ public class MCAFileTest extends MCATestCase {
 		assertEquals(87654321, f.getChunk(1023).getLastUpdate());
 		f.getChunk(1023).setInhabitedTime(13243546);
 		assertEquals(13243546, f.getChunk(1023).getInhabitedTime());
-		assertThrowsRuntimeException(() -> f.getChunk(1023).setBiomes(new int[255]), IllegalArgumentException.class);
-		assertThrowsNoRuntimeException(() -> f.getChunk(1023).setBiomes(new int[256]));
-		assertTrue(Arrays.equals(new int[256], f.getChunk(1023).getBiomes()));
+		assertThrowsRuntimeException(() -> f.getChunk(1023).setBiomes(new byte[255]), IllegalArgumentException.class);
+		assertThrowsNoRuntimeException(() -> f.getChunk(1023).setBiomes(new byte[256]));
+		assertTrue(Arrays.equals(new byte[256], f.getChunk(1023).getBiomes()));
 		f.getChunk(1023).setHeightMaps(getSomeCompoundTag());
 		assertEquals(getSomeCompoundTag(), f.getChunk(1023).getHeightMaps());
 		f.getChunk(1023).setCarvingMasks(getSomeCompoundTag());
