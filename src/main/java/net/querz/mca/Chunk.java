@@ -282,10 +282,10 @@ public class Chunk implements Iterable<Section> {
 		return biomeY * 16 + biomeZ * 4 + biomeX;
 	}
 
-	public CompoundTag getBlockStateAt(int blockX, int blockY, int blockZ) {
+	public short getBlockStateAt(int blockX, int blockY, int blockZ) {
 		Section section = sections.get(MCAUtil.blockToChunk(blockY));
 		if (section == null) {
-			return null;
+			return -1;
 		}
 		return section.getBlockStateAt(blockX, blockY, blockZ);
 	}
@@ -296,19 +296,15 @@ public class Chunk implements Iterable<Section> {
 	 * @param blockX The x-coordinate of the block.
 	 * @param blockY The y-coordinate of the block.
 	 * @param blockZ The z-coordinate of the block.
-	 * @param state The block state to be set.
-	 * @param cleanup When <code>true</code>, it will cleanup all palettes of this chunk.
-	 *                This option should only be used moderately to avoid unnecessary recalculation of the palette indices.
-	 *                Recalculating the Palette should only be executed once right before saving the Chunk to file.
 	 */
-	public void setBlockStateAt(int blockX, int blockY, int blockZ, CompoundTag state, boolean cleanup) {
+	public void setBlockStateAt(int blockX, int blockY, int blockZ, short blockId, byte blockData) {
 		checkRaw();
 		int sectionIndex = MCAUtil.blockToChunk(blockY);
 		Section section = sections.get(sectionIndex);
 		if (section == null) {
 			sections.put(sectionIndex, section = Section.newSection());
 		}
-		section.setBlockStateAt(blockX, blockY, blockZ, state, cleanup);
+		section.setBlockStateAt(blockX, blockY, blockZ, blockId, blockData);
 	}
 
 	/**
@@ -617,15 +613,6 @@ public class Chunk implements Iterable<Section> {
 
 	int getBlockIndex(int blockX, int blockZ) {
 		return (blockZ & 0xF) * 16 + (blockX & 0xF);
-	}
-
-	public void cleanupPalettesAndBlockStates() {
-		checkRaw();
-		for (Section section : sections.values()) {
-			if (section != null) {
-				section.cleanupPaletteAndBlockStates();
-			}
-		}
 	}
 
 	private void checkRaw() {

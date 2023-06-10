@@ -14,10 +14,10 @@ import java.util.Map;
 public class Section implements Comparable<Section> {
 
 	private CompoundTag data;
-	private Map<String, List<PaletteIndex>> valueIndexedPalette = new HashMap<>();
-	private ListTag<CompoundTag> palette;
+	private byte[] blocks;
+	private byte[] add;
+	private byte[] blockData;
 	private byte[] blockLight;
-	private long[] blockStates;
 	private byte[] skyLight;
 	private int height;
 	int dataVersion;
@@ -31,25 +31,19 @@ public class Section implements Comparable<Section> {
 		this.dataVersion = dataVersion;
 		height = sectionRoot.getNumber("Y").byteValue();
 
-		ListTag<?> rawPalette = sectionRoot.getListTag("Palette");
-		if (rawPalette == null) {
-			return;
-		}
-		palette = rawPalette.asCompoundTagList();
-		for (int i = 0; i < palette.size(); i++) {
-			CompoundTag data = palette.get(i);
-			putValueIndexedPalette(data, i);
-		}
-
+		ByteArrayTag blocks = sectionRoot.getByteArrayTag("Blocks");
+		ByteArrayTag add = sectionRoot.getByteArrayTag("Add");
+		ByteArrayTag blockData = sectionRoot.getByteArrayTag("Data");
 		ByteArrayTag blockLight = sectionRoot.getByteArrayTag("BlockLight");
-		LongArrayTag blockStates = sectionRoot.getLongArrayTag("BlockStates");
 		ByteArrayTag skyLight = sectionRoot.getByteArrayTag("SkyLight");
 
+    if ((loadFlags & BLOCK_STATES) != 0) {
+      this.blocks = blocks != null ? blocks.getValue() : null;
+      this.add = add != null ? add.getValue() : null;
+      this.blockData = blockData != null ? blockData.getValue() : null;
+    }
 		if ((loadFlags & BLOCK_LIGHTS) != 0) {
 			this.blockLight = blockLight != null ? blockLight.getValue() : null;
-		}
-		if ((loadFlags & BLOCK_STATES) != 0) {
-			this.blockStates = blockStates != null ? blockStates.getValue() : null;
 		}
 		if ((loadFlags & SKY_LIGHT) != 0) {
 			this.skyLight = skyLight != null ? skyLight.getValue() : null;
@@ -57,37 +51,6 @@ public class Section implements Comparable<Section> {
 	}
 
 	Section() {}
-
-	void putValueIndexedPalette(CompoundTag data, int index) {
-		PaletteIndex leaf = new PaletteIndex(data, index);
-		String name = data.getString("Name");
-		List<PaletteIndex> leaves = valueIndexedPalette.get(name);
-		if (leaves == null) {
-			leaves = new ArrayList<>(1);
-			leaves.add(leaf);
-			valueIndexedPalette.put(name, leaves);
-		} else {
-			for (PaletteIndex pal : leaves) {
-				if (pal.data.equals(data)) {
-					return;
-				}
-			}
-			leaves.add(leaf);
-		}
-	}
-
-	PaletteIndex getValueIndexedPalette(CompoundTag data) {
-		List<PaletteIndex> leaves = valueIndexedPalette.get(data.getString("Name"));
-		if (leaves == null) {
-			return null;
-		}
-		for (PaletteIndex leaf : leaves) {
-			if (leaf.data.equals(data)) {
-				return leaf;
-			}
-		}
-		return null;
-	}
 
 	@Override
 	public int compareTo(Section o) {
@@ -135,194 +98,64 @@ public class Section implements Comparable<Section> {
 	 * @param blockZ The z-coordinate of the block in this Section
 	 * @return The block state data of this block.
 	 */
-	public CompoundTag getBlockStateAt(int blockX, int blockY, int blockZ) {
+	public short getBlockStateAt(int blockX, int blockY, int blockZ) {
 		return getBlockStateAt(getBlockIndex(blockX, blockY, blockZ));
 	}
 
-	private CompoundTag getBlockStateAt(int index) {
-		int paletteIndex = getPaletteIndex(index);
-		return palette.get(paletteIndex);
+	private short getBlockStateAt(int index) {
+    if (this.blocks == null) {
+      return 0;
+    }
+
+    var block = this.blocks[index];
+    var add = this.add != null ? this.add[index >> 1] : 0;
+
+    if (add != 0) {
+      block |= (index & 1) == 0 ? (add & 0x0F) << 8 : (add & 0xF0) << 4;
+    }
+
+    return (short) (block & 0xFF);
 	}
 
-	/**
-	 * Attempts to add a block state for a specific block location in this Section.
-	 * @param blockX The x-coordinate of the block in this Section
-	 * @param blockY The y-coordinate of the block in this Section
-	 * @param blockZ The z-coordinate of the block in this Section
-	 * @param state The block state to be set
-	 * @param cleanup When <code>true</code>, it will cleanup the palette of this section.
-	 *                This option should only be used moderately to avoid unnecessary recalculation of the palette indices.
-	 *                Recalculating the Palette should only be executed once right before saving the Section to file.
-	 */
-	public void setBlockStateAt(int blockX, int blockY, int blockZ, CompoundTag state, boolean cleanup) {
-		int paletteSizeBefore = palette.size();
-		int paletteIndex = addToPalette(state);
-		//power of 2 --> bits must increase, but only if the palette size changed
-		//otherwise we would attempt to update all blockstates and the entire palette
-		//every time an existing blockstate was added while having 2^x blockstates in the palette
-		if (paletteSizeBefore != palette.size() && (paletteIndex & (paletteIndex - 1)) == 0) {
-			adjustBlockStateBits(null, blockStates);
-			cleanup = true;
-		}
+	public void setBlockStateAt(int blockX, int blockY, int blockZ, short blockId, byte blockData) {
+    var blockIndex = getBlockIndex(blockX, blockY, blockZ);
+    var halfBlockIndex = blockIndex >> 1;
 
-		setPaletteIndex(getBlockIndex(blockX, blockY, blockZ), paletteIndex, blockStates);
+    if (this.blocks == null){
+      this.blocks = new byte[4096];
+    }
 
-		if (cleanup) {
-			cleanupPaletteAndBlockStates();
-		}
-	}
+    this.blocks[blockIndex] = (byte) (blockId & 0xFF);
 
-	/**
-	 * Returns the index of the block data in the palette.
-	 * @param blockStateIndex The index of the block in this section, ranging from 0-4095.
-	 * @return The index of the block data in the palette.
-	 * */
-	public int getPaletteIndex(int blockStateIndex) {
-		int bits = blockStates.length >> 6;
+    if ((blockId & 0xF00) != 0) {
+      if (this.add == null) {
+        this.add = new byte[2048];
+      }
 
-		if (dataVersion < 2527) {
-			double blockStatesIndex = blockStateIndex / (4096D / blockStates.length);
-			int longIndex = (int) blockStatesIndex;
-			int startBit = (int) ((blockStatesIndex - Math.floor(blockStatesIndex)) * 64D);
-			if (startBit + bits > 64) {
-				long prev = bitRange(blockStates[longIndex], startBit, 64);
-				long next = bitRange(blockStates[longIndex + 1], 0, startBit + bits - 64);
-				return (int) ((next << 64 - startBit) + prev);
-			} else {
-				return (int) bitRange(blockStates[longIndex], startBit, startBit + bits);
-			}
-		} else {
-			int indicesPerLong = (int) (64D / bits);
-			int blockStatesIndex = blockStateIndex / indicesPerLong;
-			int startBit = (blockStateIndex % indicesPerLong) * bits;
-			return (int) bitRange(blockStates[blockStatesIndex], startBit, startBit + bits);
-		}
-	}
+      var oldBlockIndex = this.add[halfBlockIndex];
+      if ((blockIndex & 1) == 0 && (blockId & 0xF00) != 0) {
+        this.add[halfBlockIndex] = (byte) ((oldBlockIndex & 0xF0) | ((blockId & 0xF00) >> 8));
+      } else if ((blockIndex & 1) == 1 && (blockId & 0xF00) != 0) {
+        this.add[halfBlockIndex] = (byte) ((oldBlockIndex & 0x0F) | ((blockId & 0xF00) >> 4));
+      }
+    }
 
-	/**
-	 * Sets the index of the block data in the BlockStates. Does not adjust the size of the BlockStates array.
-	 * @param blockIndex The index of the block in this section, ranging from 0-4095.
-	 * @param paletteIndex The block state to be set (index of block data in the palette).
-	 * @param blockStates The block states to be updated.
-	 * */
-	public void setPaletteIndex(int blockIndex, int paletteIndex, long[] blockStates) {
-		int bits = blockStates.length >> 6;
+    if (blockData != 0) {
+      if (this.blockData == null) {
+        this.blockData = new byte[2048];
+      }
 
-		if (dataVersion < 2527) {
-			double blockStatesIndex = blockIndex / (4096D / blockStates.length);
-			int longIndex = (int) blockStatesIndex;
-			int startBit = (int) ((blockStatesIndex - Math.floor(longIndex)) * 64D);
-			if (startBit + bits > 64) {
-				blockStates[longIndex] = updateBits(blockStates[longIndex], paletteIndex, startBit, 64);
-				blockStates[longIndex + 1] = updateBits(blockStates[longIndex + 1], paletteIndex, startBit - 64, startBit + bits - 64);
-			} else {
-				blockStates[longIndex] = updateBits(blockStates[longIndex], paletteIndex, startBit, startBit + bits);
-			}
-		} else {
-			int indicesPerLong = (int) (64D / bits);
-			int blockStatesIndex = blockIndex / indicesPerLong;
-			int startBit = (blockIndex % indicesPerLong) * bits;
-			blockStates[blockStatesIndex] = updateBits(blockStates[blockStatesIndex], paletteIndex, startBit, startBit + bits);
-		}
-	}
-
-	/**
-	 * Fetches the palette of this Section.
-	 * @return The palette of this Section.
-	 */
-	public ListTag<CompoundTag> getPalette() {
-		return palette;
-	}
-
-	int addToPalette(CompoundTag data) {
-		PaletteIndex index;
-		if ((index = getValueIndexedPalette(data)) != null) {
-			return index.index;
-		}
-		palette.add(data);
-		putValueIndexedPalette(data, palette.size() - 1);
-		return palette.size() - 1;
+      var oldBlockData = this.blockData[halfBlockIndex];
+      if ((blockIndex & 1) == 0) {
+        this.blockData[halfBlockIndex] = (byte) ((oldBlockData & 0xF0) | (blockData & 0xF));
+      } else if ((blockIndex & 1) == 1) {
+        this.blockData[halfBlockIndex] = (byte) ((oldBlockData & 0x0F) | ((blockData & 0xF) << 4));
+      }
+    }
 	}
 
 	int getBlockIndex(int blockX, int blockY, int blockZ) {
-		return (blockY & 0xF) * 256 + (blockZ & 0xF) * 16 + (blockX & 0xF);
-	}
-
-	static long updateBits(long n, long m, int i, int j) {
-		//replace i to j in n with j - i bits of m
-		long mShifted = i > 0 ? (m & ((1L << j - i) - 1)) << i : (m & ((1L << j - i) - 1)) >>> -i;
-		return ((n & ((j > 63 ? 0 : (~0L << j)) | (i < 0 ? 0 : ((1L << i) - 1L)))) | mShifted);
-	}
-
-	static long bitRange(long value, int from, int to) {
-		int waste = 64 - to;
-		return (value << waste) >>> (waste + from);
-	}
-
-	/**
-	 * This method recalculates the palette and its indices.
-	 * This should only be used moderately to avoid unnecessary recalculation of the palette indices.
-	 * Recalculating the Palette should only be executed once right before saving the Section to file.
-	 */
-	public void cleanupPaletteAndBlockStates() {
-		if (blockStates != null) {
-			Map<Integer, Integer> oldToNewMapping = cleanupPalette();
-			adjustBlockStateBits(oldToNewMapping, blockStates);
-		}
-	}
-
-	private Map<Integer, Integer> cleanupPalette() {
-		//create index - palette mapping
-		Map<Integer, Integer> allIndices = new HashMap<>();
-		for (int i = 0; i < 4096; i++) {
-			int paletteIndex = getPaletteIndex(i);
-			allIndices.put(paletteIndex, paletteIndex);
-		}
-		//delete unused blocks from palette
-		//start at index 1 because we need to keep minecraft:air
-		int index = 1;
-		valueIndexedPalette = new HashMap<>(valueIndexedPalette.size());
-		putValueIndexedPalette(palette.get(0), 0);
-		for (int i = 1; i < palette.size(); i++) {
-			if (!allIndices.containsKey(index)) {
-				palette.remove(i);
-				i--;
-			} else {
-				putValueIndexedPalette(palette.get(i), i);
-				allIndices.put(index, i);
-			}
-			index++;
-		}
-
-		return allIndices;
-	}
-
-	void adjustBlockStateBits(Map<Integer, Integer> oldToNewMapping, long[] blockStates) {
-		//increases or decreases the amount of bits used per BlockState
-		//based on the size of the palette. oldToNewMapping can be used to update indices
-		//if the palette had been cleaned up before using MCAFile#cleanupPalette().
-
-		int newBits = 32 - Integer.numberOfLeadingZeros(palette.size() - 1);
-		newBits = Math.max(newBits, 4);
-
-		long[] newBlockStates;
-
-		if (dataVersion < 2527) {
-			newBlockStates = newBits == blockStates.length / 64 ? blockStates : new long[newBits * 64];
-		} else {
-			int newLength = (int) Math.ceil(4096D / (Math.floor(64D / newBits)));
-			newBlockStates = newBits == blockStates.length / 64 ? blockStates : new long[newLength];
-		}
-		if (oldToNewMapping != null) {
-			for (int i = 0; i < 4096; i++) {
-				setPaletteIndex(i, oldToNewMapping.get(getPaletteIndex(i)), newBlockStates);
-			}
-		} else {
-			for (int i = 0; i < 4096; i++) {
-				setPaletteIndex(i, getPaletteIndex(i), newBlockStates);
-			}
-		}
-		this.blockStates = newBlockStates;
+		return ((blockY & 0xF) << 8) + ((blockZ & 0xF) << 4) + (blockX & 0xF);
 	}
 
 	/**
@@ -342,28 +175,6 @@ public class Section implements Comparable<Section> {
 			throw new IllegalArgumentException("BlockLight array must have a length of 2048");
 		}
 		this.blockLight = blockLight;
-	}
-
-	/**
-	 * @return The indices of the block states of this Section.
-	 */
-	public long[] getBlockStates() {
-		return blockStates;
-	}
-
-	/**
-	 * Sets the block state indices to a custom value.
-	 * @param blockStates The block state indices.
-	 * @throws NullPointerException If <code>blockStates</code> is <code>null</code>
-	 * @throws IllegalArgumentException When <code>blockStates</code>' length is &lt; 256 or &gt; 4096 and is not a multiple of 64
-	 */
-	public void setBlockStates(long[] blockStates) {
-		if (blockStates == null) {
-			throw new NullPointerException("BlockStates cannot be null");
-		} else if (blockStates.length % 64 != 0 || blockStates.length < 256 || blockStates.length > 4096) {
-			throw new IllegalArgumentException("BlockStates must have a length > 255 and < 4097 and must be divisible by 64");
-		}
-		this.blockStates = blockStates;
 	}
 
 	/**
@@ -391,11 +202,9 @@ public class Section implements Comparable<Section> {
 	 */
 	public static Section newSection() {
 		Section s = new Section();
-		s.blockStates = new long[256];
-		s.palette = new ListTag<>(CompoundTag.class);
-		CompoundTag air = new CompoundTag();
-		air.putString("Name", "minecraft:air");
-		s.palette.add(air);
+		s.blocks = new byte[4096];
+		s.add = new byte[2048];
+		s.blockData = new byte[2048];
 		s.data = new CompoundTag();
 		return s;
 	}
@@ -409,14 +218,17 @@ public class Section implements Comparable<Section> {
 	 */
 	public CompoundTag updateHandle(int y) {
 		data.putByte("Y", (byte) y);
-		if (palette != null) {
-			data.put("Palette", palette);
+		if (blocks != null) {
+			data.putByteArray("Blocks", blocks);
+		}
+		if (add != null) {
+			data.putByteArray("Add", add);
+		}
+		if (blockData != null) {
+			data.putByteArray("Data", blockData);
 		}
 		if (blockLight != null) {
 			data.putByteArray("BlockLight", blockLight);
-		}
-		if (blockStates != null) {
-			data.putLongArray("BlockStates", blockStates);
 		}
 		if (skyLight != null) {
 			data.putByteArray("SkyLight", skyLight);
@@ -426,48 +238,5 @@ public class Section implements Comparable<Section> {
 
 	public CompoundTag updateHandle() {
 		return updateHandle(height);
-	}
-
-	/**
-	 * Creates an iterable that iterates over all blocks in this section, in order of their indices.
-	 * An index can be calculated using the following formula:
-	 * <pre>
-	 * {@code
-	 * index = (blockY & 0xF) * 256 + (blockZ & 0xF) * 16 + (blockX & 0xF);
-	 * }
-	 * </pre>
-	 * The CompoundTags are references to this Section's Palette and should only be modified if the intention is to
-	 * modify ALL blocks of the same type in this Section at the same time.
-	 * */
-	public Iterable<CompoundTag> blocksStates() {
-		return new BlockIterator(this);
-	}
-
-	private static class BlockIterator implements Iterable<CompoundTag>, Iterator<CompoundTag> {
-
-		private Section section;
-		private int currentIndex;
-
-		public BlockIterator(Section section) {
-			this.section = section;
-			currentIndex = 0;
-		}
-
-		@Override
-		public boolean hasNext() {
-			return currentIndex < 4096;
-		}
-
-		@Override
-		public CompoundTag next() {
-			CompoundTag blockState = section.getBlockStateAt(currentIndex);
-			currentIndex++;
-			return blockState;
-		}
-
-		@Override
-		public Iterator<CompoundTag> iterator() {
-			return this;
-		}
 	}
 }

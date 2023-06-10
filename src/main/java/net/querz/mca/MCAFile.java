@@ -263,11 +263,9 @@ public class MCAFile implements Iterable<Chunk> {
 	 * @param blockX The x-coordinate of the block.
 	 * @param blockY The y-coordinate of the block.
 	 * @param blockZ The z-coordinate of the block.
-	 * @param state The block state to be set.
-	 * @param cleanup Whether the Palette and the BLockStates should be recalculated after adding the block state.
 	 */
-	public void setBlockStateAt(int blockX, int blockY, int blockZ, CompoundTag state, boolean cleanup) {
-		createChunkIfMissing(blockX, blockZ).setBlockStateAt(blockX, blockY, blockZ, state, cleanup);
+	public void setBlockStateAt(int blockX, int blockY, int blockZ, short blockId, byte blockData) {
+		createChunkIfMissing(blockX, blockZ).setBlockStateAt(blockX, blockY, blockZ, blockId, blockData);
 	}
 
 	/**
@@ -278,24 +276,13 @@ public class MCAFile implements Iterable<Chunk> {
 	 * @param blockZ The z-coordinate of the block.
 	 * @return The block state or <code>null</code> if the chunk or the section do not exist.
 	 */
-	public CompoundTag getBlockStateAt(int blockX, int blockY, int blockZ) {
+	public short getBlockStateAt(int blockX, int blockY, int blockZ) {
 		int chunkX = MCAUtil.blockToChunk(blockX), chunkZ = MCAUtil.blockToChunk(blockZ);
 		Chunk chunk = getChunk(chunkX, chunkZ);
 		if (chunk == null) {
-			return null;
+			return -1;
 		}
 		return chunk.getBlockStateAt(blockX, blockY, blockZ);
-	}
-
-	/**
-	 * Recalculates the Palette and the BlockStates of all chunks and sections of this region.
-	 */
-	public void cleanupPalettesAndBlockStates() {
-		for (Chunk chunk : chunks) {
-			if (chunk != null) {
-				chunk.cleanupPalettesAndBlockStates();
-			}
-		}
 	}
 
 	@Override
