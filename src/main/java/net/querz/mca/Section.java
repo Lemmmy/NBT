@@ -31,7 +31,8 @@ public class Section implements Comparable<Section> {
 		this.dataVersion = dataVersion;
 		height = sectionRoot.getNumber("Y").byteValue();
 
-		ListTag<?> rawPalette = sectionRoot.getListTag("Palette");
+		CompoundTag container = sectionRoot.getCompoundTag("block_states");
+		ListTag<?> rawPalette = container.getListTag("palette");
 		if (rawPalette == null) {
 			return;
 		}
@@ -41,8 +42,8 @@ public class Section implements Comparable<Section> {
 			putValueIndexedPalette(data, i);
 		}
 
+		LongArrayTag blockStates = container.getLongArrayTag("data");
 		ByteArrayTag blockLight = sectionRoot.getByteArrayTag("BlockLight");
-		LongArrayTag blockStates = sectionRoot.getLongArrayTag("BlockStates");
 		ByteArrayTag skyLight = sectionRoot.getByteArrayTag("SkyLight");
 
 		if ((loadFlags & BLOCK_LIGHTS) != 0) {
