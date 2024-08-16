@@ -18,6 +18,7 @@ public class MCAFile implements Iterable<Chunk> {
 
 	private int regionX, regionZ;
 	private Chunk[] chunks;
+  public final boolean entityFile;
 
 	/**
 	 * MCAFile represents a world save file used by Minecraft to store world
@@ -27,9 +28,10 @@ public class MCAFile implements Iterable<Chunk> {
 	 * @param regionX The x-coordinate of this region.
 	 * @param regionZ The z-coordinate of this region.
 	 * */
-	public MCAFile(int regionX, int regionZ) {
+	public MCAFile(int regionX, int regionZ, boolean entityFile) {
 		this.regionX = regionX;
 		this.regionZ = regionZ;
+    this.entityFile = entityFile;
 	}
 
 	/**
@@ -61,7 +63,7 @@ public class MCAFile implements Iterable<Chunk> {
 			}
 			raf.seek(4096 + i * 4);
 			int timestamp = raf.readInt();
-			Chunk chunk = new Chunk(timestamp);
+			Chunk chunk = new Chunk(timestamp, entityFile);
 			raf.seek(4096 * offset + 4); //+4: skip data size
 			chunk.deserialize(raf, loadFlags);
 			chunks[i] = chunk;
@@ -210,7 +212,7 @@ public class MCAFile implements Iterable<Chunk> {
 		int chunkX = MCAUtil.blockToChunk(blockX), chunkZ = MCAUtil.blockToChunk(blockZ);
 		Chunk chunk = getChunk(chunkX, chunkZ);
 		if (chunk == null) {
-			chunk = Chunk.newChunk();
+			chunk = Chunk.newChunk(entityFile);
 			setChunk(getChunkIndex(chunkX, chunkZ), chunk);
 		}
 		return chunk;
@@ -291,6 +293,8 @@ public class MCAFile implements Iterable<Chunk> {
 	 * Recalculates the Palette and the BlockStates of all chunks and sections of this region.
 	 */
 	public void cleanupPalettesAndBlockStates() {
+    if (entityFile) return;
+
 		for (Chunk chunk : chunks) {
 			if (chunk != null) {
 				chunk.cleanupPalettesAndBlockStates();

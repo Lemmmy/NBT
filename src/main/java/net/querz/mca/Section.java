@@ -32,6 +32,10 @@ public class Section implements Comparable<Section> {
 		height = sectionRoot.getNumber("Y").byteValue();
 
 		CompoundTag container = sectionRoot.getCompoundTag("block_states");
+    if (container == null) {
+      return; // all chunks seem to start with an empty section? ok
+    }
+
 		ListTag<?> rawPalette = container.getListTag("palette");
 		if (rawPalette == null) {
 			return;
@@ -410,18 +414,26 @@ public class Section implements Comparable<Section> {
 	 */
 	public CompoundTag updateHandle(int y) {
 		data.putByte("Y", (byte) y);
-		if (palette != null) {
-			data.put("Palette", palette);
-		}
+
 		if (blockLight != null) {
 			data.putByteArray("BlockLight", blockLight);
 		}
-		if (blockStates != null) {
-			data.putLongArray("BlockStates", blockStates);
-		}
+
+    if (palette != null || blockStates != null) {
+      CompoundTag container = new CompoundTag();
+      if (palette != null) {
+        container.put("palette", palette);
+      }
+      if (blockStates != null) {
+        container.putLongArray("data", blockStates);
+      }
+      data.put("block_states", container);
+    }
+
 		if (skyLight != null) {
 			data.putByteArray("SkyLight", skyLight);
 		}
+
 		return data;
 	}
 

@@ -5,6 +5,7 @@ import net.querz.nbt.tag.ListTag;
 import net.querz.nbt.io.NamedTag;
 import net.querz.nbt.io.NBTDeserializer;
 import net.querz.nbt.io.NBTSerializer;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -20,10 +21,11 @@ import static net.querz.mca.LoadFlags.*;
 
 public class Chunk implements Iterable<Section> {
 
-	public static final int DEFAULT_DATA_VERSION = 2567;
+	public static final int DEFAULT_DATA_VERSION = 3465;
 
 	private boolean partial;
 	private boolean raw;
+  public final boolean entityChunk;
 
 	private int lastMCAUpdate;
 
@@ -47,15 +49,17 @@ public class Chunk implements Iterable<Section> {
 	private String status;
 	private CompoundTag structures;
 
-	Chunk(int lastMCAUpdate) {
+	Chunk(int lastMCAUpdate, boolean entityChunk) {
 		this.lastMCAUpdate = lastMCAUpdate;
+    this.entityChunk = entityChunk;
 	}
 
 	/**
 	 * Create a new chunk based on raw base data from a region file.
 	 * @param data The raw base data to be used.
 	 */
-	public Chunk(CompoundTag data) {
+	public Chunk(CompoundTag data, boolean entityChunk) {
+    this.entityChunk = entityChunk;
 		this.data = data;
 		initReferences(ALL_DATA);
 	}
@@ -71,6 +75,12 @@ public class Chunk implements Iterable<Section> {
 		}
 
 		dataVersion = data.getInt("DataVersion");
+
+    if (entityChunk) {
+      entities = data.containsKey("Entities") ? data.getListTag("Entities").asCompoundTagList() : null;
+      return;
+    }
+
 		inhabitedTime = data.getLong("InhabitedTime");
 		lastUpdate = data.getLong("LastUpdate");
 		if ((loadFlags & BIOMES) != 0) {
@@ -81,9 +91,6 @@ public class Chunk implements Iterable<Section> {
 		}
 		if ((loadFlags & CARVING_MASKS) != 0) {
 			carvingMasks = data.getCompoundTag("CarvingMasks");
-		}
-		if ((loadFlags & ENTITIES) != 0) {
-			entities = data.containsKey("entities") ? data.getListTag("entities").asCompoundTagList() : null;
 		}
 		if ((loadFlags & TILE_ENTITIES) != 0) {
 			tileEntities = data.containsKey("block_entities") ? data.getListTag("block_entities").asCompoundTagList() : null;
@@ -112,7 +119,7 @@ public class Chunk implements Iterable<Section> {
 		}
 		if ((loadFlags & (BLOCK_LIGHTS|BLOCK_STATES|SKY_LIGHT)) != 0 && data.containsKey("sections")) {
 			for (CompoundTag section : data.getListTag("sections").asCompoundTagList()) {
-				int sectionIndex = section.getNumber("Y").byteValue();
+				int sectionIndex = section.getNumber("Y").intValue();
 				Section newSection = new Section(section, dataVersion, loadFlags);
 				sections.put(sectionIndex, newSection);
 			}
@@ -279,7 +286,8 @@ public class Chunk implements Iterable<Section> {
 	}
 
 	public CompoundTag getBlockStateAt(int blockX, int blockY, int blockZ) {
-		Section section = sections.get(MCAUtil.blockToChunk(blockY));
+    int sectionIndex = blockY >> 4;
+		Section section = sections.get(sectionIndex);
 		if (section == null) {
 			return null;
 		}
@@ -298,8 +306,11 @@ public class Chunk implements Iterable<Section> {
 	 *                Recalculating the Palette should only be executed once right before saving the Chunk to file.
 	 */
 	public void setBlockStateAt(int blockX, int blockY, int blockZ, CompoundTag state, boolean cleanup) {
-		checkRaw();
-		int sectionIndex = MCAUtil.blockToChunk(blockY);
+    checkEntityChunk();
+    checkRaw();
+
+    // In 1.18, 16-block vertical chunk sections may start at any yPos
+    int sectionIndex = blockY >> 4;
 		Section section = sections.get(sectionIndex);
 		if (section == null) {
 			sections.put(sectionIndex, section = Section.newSection());
@@ -307,7 +318,11 @@ public class Chunk implements Iterable<Section> {
 		section.setBlockStateAt(blockX, blockY, blockZ, state, cleanup);
 	}
 
-	/**
+  private void checkEntityChunk() {
+    if (entityChunk) throw new UnsupportedOperationException("This chunk only contains entities");
+  }
+
+  /**
 	 * @return The DataVersion of this chunk.
 	 */
 	public int getDataVersion() {
@@ -408,6 +423,7 @@ public class Chunk implements Iterable<Section> {
 	 * @param inhabitedTime The time in ticks.
 	 */
 	public void setInhabitedTime(long inhabitedTime) {
+    checkEntityChunk();
 		checkRaw();
 		this.inhabitedTime = inhabitedTime;
 	}
@@ -471,6 +487,7 @@ public class Chunk implements Iterable<Section> {
 	 * @return The entities of this chunk.
 	 */
 	public ListTag<CompoundTag> getEntities() {
+    if (!entityChunk) throw new UnsupportedOperationException("This chunk does not contain entities");
 		return entities;
 	}
 
@@ -487,7 +504,8 @@ public class Chunk implements Iterable<Section> {
 	 * @return The tile entities of this chunk.
 	 */
 	public ListTag<CompoundTag> getTileEntities() {
-		return tileEntities;
+    checkEntityChunk();
+    return tileEntities;
 	}
 
 	/**
@@ -616,6 +634,7 @@ public class Chunk implements Iterable<Section> {
 	}
 
 	public void cleanupPalettesAndBlockStates() {
+    if (entityChunk) return;
 		checkRaw();
 		for (Section section : sections.values()) {
 			if (section != null) {
@@ -630,16 +649,22 @@ public class Chunk implements Iterable<Section> {
 		}
 	}
 
-	public static Chunk newChunk() {
-		return newChunk(DEFAULT_DATA_VERSION);
+	public static Chunk newChunk(boolean entityChunk) {
+		return newChunk(DEFAULT_DATA_VERSION, entityChunk);
 	}
 
-	public static Chunk newChunk(int dataVersion) {
-		Chunk c = new Chunk(0);
+	public static Chunk newChunk(int dataVersion, boolean entityChunk) {
+		Chunk c = new Chunk(0, entityChunk);
+
 		c.dataVersion = dataVersion;
 		c.data = new CompoundTag();
-		c.data.put("Level", new CompoundTag());
-		c.status = "mobs_spawned";
+
+    if (entityChunk) {
+      c.entities = new ListTag<>(CompoundTag.class);
+    } else {
+      c.status = "mobs_spawned";
+    }
+
 		return c;
 	}
 
@@ -657,62 +682,71 @@ public class Chunk implements Iterable<Section> {
 		}
 
 		data.putInt("DataVersion", dataVersion);
-		CompoundTag level = data.getCompoundTag("Level");
-		level.putInt("xPos", xPos);
-		level.putInt("zPos", zPos);
-		level.putLong("LastUpdate", lastUpdate);
-		level.putLong("InhabitedTime", inhabitedTime);
-		if (dataVersion < 2202) {
-			if (biomes != null && biomes.length == 256) {
-				level.putIntArray("Biomes", biomes);
-			}
-		} else {
-			if (biomes != null && biomes.length == 1024) {
-				level.putIntArray("Biomes", biomes);
-			}
-		}
-		if (heightMaps != null) {
-			level.put("Heightmaps", heightMaps);
-		}
-		if (carvingMasks != null) {
-			level.put("CarvingMasks", carvingMasks);
-		}
-		if (entities != null) {
-			level.put("Entities", entities);
-		}
-		if (tileEntities != null) {
-			level.put("TileEntities", tileEntities);
-		}
-		if (tileTicks != null) {
-			level.put("TileTicks", tileTicks);
-		}
-		if (liquidTicks != null) {
-			level.put("LiquidTicks", liquidTicks);
-		}
-		if (lights != null) {
-			level.put("Lights", lights);
-		}
-		if (liquidsToBeTicked != null) {
-			level.put("LiquidsToBeTicked", liquidsToBeTicked);
-		}
-		if (toBeTicked != null) {
-			level.put("ToBeTicked", toBeTicked);
-		}
-		if (postProcessing != null) {
-			level.put("PostProcessing", postProcessing);
-		}
-		level.putString("Status", status);
-		if (structures != null) {
-			level.put("Structures", structures);
-		}
-		ListTag<CompoundTag> sections = new ListTag<>(CompoundTag.class);
-		for (Section section : this.sections.values()) {
-			if (section != null) {
-				sections.add(section.updateHandle());
-			}
-		}
-		level.put("Sections", sections);
-		return data;
+
+    if (entityChunk) {
+      data.putIntArray("Position", new int[]{xPos, zPos});
+
+      if (entities != null) {
+        data.put("Entities", entities);
+      }
+    } else {
+      data.putInt("xPos", xPos);
+      data.putInt("zPos", zPos);
+      data.putLong("LastUpdate", lastUpdate);
+      data.putLong("InhabitedTime", inhabitedTime);
+
+      if (dataVersion < 2202) {
+        if (biomes != null && biomes.length == 256) {
+          data.putIntArray("Biomes", biomes);
+        }
+      } else {
+        if (biomes != null && biomes.length == 1024) {
+          data.putIntArray("Biomes", biomes);
+        }
+      }
+      if (heightMaps != null) {
+        data.put("Heightmaps", heightMaps);
+      }
+      if (carvingMasks != null) {
+        data.put("CarvingMasks", carvingMasks);
+      }
+      if (tileEntities != null) {
+        data.put("block_entities", tileEntities);
+      }
+      if (tileTicks != null) {
+        data.put("block_ticks", tileTicks);
+      }
+      if (liquidTicks != null) {
+        data.put("fluid_ticks", liquidTicks);
+      }
+      if (lights != null) {
+        data.put("Lights", lights);
+      }
+      if (liquidsToBeTicked != null) {
+        data.put("LiquidsToBeTicked", liquidsToBeTicked);
+      }
+      if (toBeTicked != null) {
+        data.put("ToBeTicked", toBeTicked);
+      }
+      if (postProcessing != null) {
+        data.put("PostProcessing", postProcessing);
+      }
+      data.putString("Status", status);
+      if (structures != null) {
+        data.put("Structures", structures);
+      }
+
+      ListTag<CompoundTag> sections = new ListTag<>(CompoundTag.class);
+      for (Section section : this.sections.values()) {
+        if (section != null) {
+          sections.add(section.updateHandle());
+        }
+      }
+
+      data.put("sections", sections);
+    }
+
+    return data;
 	}
 
 	@Override

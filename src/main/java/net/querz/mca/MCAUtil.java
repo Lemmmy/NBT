@@ -216,7 +216,11 @@ public final class MCAUtil {
 	public static MCAFile newMCAFile(File file) {
 		Matcher m = mcaFilePattern.matcher(file.getName());
 		if (m.find()) {
-			return new MCAFile(Integer.parseInt(m.group("regionX")), Integer.parseInt(m.group("regionZ")));
+			return new MCAFile(
+        Integer.parseInt(m.group("regionX")),
+        Integer.parseInt(m.group("regionZ")),
+        "entities".equals(file.getParentFile().getName())
+      );
 		}
 		throw new IllegalArgumentException("invalid mca file name: " + file.getName());
 	}
