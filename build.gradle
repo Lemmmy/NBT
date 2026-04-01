@@ -7,7 +7,7 @@ plugins {
 }
 
 group   = "net.querz.nbt"
-version = "6.2"
+version = "6.2+mc1.12.2"
 
 java {
 	toolchain {
