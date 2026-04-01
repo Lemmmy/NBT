@@ -1,56 +1,61 @@
 plugins {
-	id 'com.github.kt3k.coveralls' version '2.4.0'
-	id 'maven'
+	id "com.github.kt3k.coveralls" version "2.4.0"
+	id "maven-publish"
+	id "java-library"
+	id "jacoco"
+	id "idea"
 }
 
-apply plugin: 'java'
-apply plugin: 'eclipse'
-apply plugin: 'idea'
-apply plugin: 'jacoco'
+group   = "net.querz.nbt"
+version = "6.2"
 
-group                        = 'net.querz.nbt'
-archivesBaseName             = 'nbt'
-version                      = '6.1'
-sourceCompatibility          = '1.8'
-targetCompatibility          = '1.8'
-compileJava.options.encoding = 'UTF-8'
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(8)
+	}
+	withSourcesJar()
+	withJavadocJar()
+}
+
+base {
+	archivesName = "nbt"
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = "UTF-8"
+}
 
 repositories {
-	jcenter()
+	mavenCentral()
 }
 
 dependencies {
-	testCompile 'junit:junit:4.12'
+	testImplementation "junit:junit:4.12"
 }
 
-javadoc {
-	source = sourceSets.main.allJava
-	classpath = configurations.compile
-	destinationDir = file("./doc/")
-	options.windowTitle 'NBT'
-	options.encoding 'UTF-8'
-	options.linkSource true
-	options.links 'https://docs.oracle.com/javase/8/docs/api/'
+tasks.named("javadoc") {
+	options.windowTitle = "NBT"
+	options.encoding = "UTF-8"
+	options.links("https://docs.oracle.com/javase/8/docs/api/")
 }
 
-task sourcesJar(type: Jar, dependsOn: classes) {
-	classifier = 'sources'
-	from sourceSets.main.allSource
-}
-
-task javadocJar(type: Jar, dependsOn: javadoc) {
-	classifier = 'javadoc'
-	from javadoc.destinationDir
-}
-
-jacocoTestReport {
-	reports {
-		xml.enabled = true
-		html.enabled = true
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java
+		}
 	}
-}
 
-artifacts {
-	archives sourcesJar
-	archives javadocJar
+	repositories {
+		maven {
+			name = "lemmmyRepo"
+			url = uri("https://repo.lem.sh/releases")
+
+			credentials(PasswordCredentials)
+
+			authentication {
+				basic(BasicAuthentication)
+			}
+		}
+	}
 }
